@@ -1,0 +1,33 @@
+import { useState } from 'react';
+import { fmt, get, post, put, today, useFetch } from '../api';
+import { Badge, Empty, ErrorBox, Field, Loading, Modal, NumInput, PageTop, useAction, useBiz, useToast } from '../ui';
+
+export function Recurring() {
+  const { b, canWrite, isAdmin } = useBiz(); const toast = useToast(); const { data, error, loading, reload } = useFetch<any[]>(b('/recurring')); const [edit, setEdit] = useState<any>(null); const act = useAction(); const [res, setRes] = useState<any>(null);
+  return <><PageTop title="Recurring invoices" sub="Retainers and ongoing services. This creates invoices on a schedule — it never charges anyone.">{canWrite && <button className="btn primary" onClick={() => setEdit({})}>New schedule</button>}{isAdmin && <button className="btn" onClick={() => act.run(async () => { setRes(await post(b('/recurring/run'))); reload(); }, 'Scheduler run complete')}>Run due schedules now</button>}</PageTop>
+    {res && <div className="alert ok" style={{ marginBottom: 12 }}>Created {res.created.length} invoice(s), issued {res.issued.length}. {res.errors.length ? `Errors: ${res.errors.join('; ')}` : ''}</div>}{act.error && <ErrorBox error={act.error} />}
+    <div className="alert" style={{ marginBottom: 12 }}>Schedules run automatically each hour while the server is running (and via <code>npm run jobs</code>). Each period can only ever produce one invoice, even if the job retries.</div>
+    {error ? <ErrorBox error={error} retry={reload} /> : loading && !data ? <Loading /> : !data?.length ? <Empty title="No recurring schedules" /> : <div className="tablewrap"><table><thead><tr><th>Schedule</th><th>Client</th><th>Frequency</th><th>Next run</th><th>Mode</th><th /></tr></thead><tbody>{data.map((s) => <tr key={s.id}><td>{s.name} {!s.active && <Badge s="inactive" />}<div className="muted">{s.runs} invoice(s) created</div></td><td>{s.client_name}</td><td>every {s.interval_n > 1 ? s.interval_n + ' ' : ''}{s.frequency}</td><td>{s.active ? s.next_run_date : '—'}</td><td>{s.auto_issue ? 'issues automatically' : 'creates drafts'}</td><td>{canWrite && <button className="btn sm" onClick={() => setEdit(s)}>Edit</button>}</td></tr>)}</tbody></table></div>}
+    {edit && <Form s={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); toast('Schedule saved'); }} />}</>;
+}
+function Form({ s, onClose, onSaved }: { s: any; onClose: () => void; onSaved: () => void }) {
+  const { b, biz } = useBiz(); const { data: clients } = useFetch<any[]>(b('/clients')); const { data: taxes } = useFetch<any[]>(b('/taxes')); const { busy, error, run } = useAction();
+  const [f, setF] = useState<any>({ name: '', client_id: '', frequency: 'monthly', interval_n: 1, start_date: today(), end_date: '', auto_issue: 0, payment_terms_days: 14, currency: biz.currency, lines: [], notes: '', active: 1, ...s });
+  const add = async (id: number) => { const l = await get(b(`/ratecard/line/${id}?client_id=${f.client_id || ''}`)); setF({ ...f, lines: [...f.lines, l] }); };
+  const { data: items } = useFetch<any[]>(b('/ratecard/items?status=active'));
+  return <Modal title={s.id ? 'Edit schedule' : 'New recurring schedule'} onClose={onClose} wide><div className="form cols">
+    <Field label="Name"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Monthly social media retainer" /></Field>
+    <Field label="Client"><select value={f.client_id} disabled={!!s.id} onChange={(e) => setF({ ...f, client_id: Number(e.target.value), lines: [] })}><option value="">Choose…</option>{clients?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+    <Field label="Frequency"><select value={f.frequency} onChange={(e) => setF({ ...f, frequency: e.target.value })}><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select></Field>
+    <Field label="Every N periods"><input inputMode="numeric" value={f.interval_n} onChange={(e) => setF({ ...f, interval_n: Number(e.target.value) || 1 })} /></Field>
+    <Field label="Start date"><input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} /></Field><Field label="End date (optional)"><input type="date" value={f.end_date ?? ''} onChange={(e) => setF({ ...f, end_date: e.target.value })} /></Field>
+    <Field label="Payment terms (days)"><input inputMode="numeric" value={f.payment_terms_days} onChange={(e) => setF({ ...f, payment_terms_days: Number(e.target.value) })} /></Field>
+    <Field label="When due"><select value={f.auto_issue} onChange={(e) => setF({ ...f, auto_issue: Number(e.target.value) })}><option value={0}>Create a draft for me to review</option><option value={1}>Issue the invoice automatically</option></select></Field>
+    <div className="span"><h3>Services</h3><p className="help">Prices are copied now and stay fixed for this schedule until you edit it (rate-card changes are not applied silently).</p>
+      {f.lines.map((l: any, i: number) => <div className="row" key={i} style={{ marginTop: 6 }}><span>{l.description}</span><NumInput aria-label="Quantity" milli={l.qty_milli} onChange={(m) => setF({ ...f, lines: f.lines.map((x: any, j: number) => (j === i ? { ...x, qty_milli: m } : x)) })} style={{ maxWidth: 90 }} /><span className="fit">{fmt(l.unit_price_cents)} / {l.unit}</span><button className="btn sm fit" onClick={() => setF({ ...f, lines: f.lines.filter((_: any, j: number) => j !== i) })}>Remove</button></div>)}
+      <select aria-label="Add service" disabled={!f.client_id} value="" onChange={(e) => e.target.value && add(Number(e.target.value))} style={{ marginTop: 8 }}><option value="">+ Add a service or package…</option>{items?.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
+    <Field label="Invoice notes" span><textarea value={f.notes ?? ''} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+    {s.id && <label style={{ display: 'flex', gap: 8 }}><input type="checkbox" checked={!!f.active} onChange={(e) => setF({ ...f, active: e.target.checked ? 1 : 0 })} /> Active</label>}
+    {taxes && void taxes}{error && <div className="alert bad span">{error}</div>}
+    <button className="btn primary span" disabled={busy || !f.name || !f.client_id || !f.lines.length} onClick={() => run(async () => { const body = { ...f, end_date: f.end_date || null, lines: f.lines.map((l: any) => ({ ...l, children: (l.children ?? []).map((c: any) => c) })) }; s.id ? await put(b(`/recurring/${s.id}`), body) : await post(b('/recurring'), body); onSaved(); })}>Save schedule</button></div></Modal>;
+}

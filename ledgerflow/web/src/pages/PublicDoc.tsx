@@ -1,0 +1,24 @@
+import { useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { fmt, formatQtyUi, post, pctFromMilli, useFetch } from '../api';
+import { Field, useAction } from '../ui';
+
+/** Client-facing page opened from a secure link. Shows only what the token holder needs. */
+export function PublicDoc() {
+  const { token } = useParams(); const { data: d, error, loading, reload } = useFetch<any>(`/api/public/${token}`); const [name, setName] = useState(''); const { busy, error: err, run } = useAction(); const [done, setDone] = useState('');
+  if (loading) return <p style={{ padding: 24 }}>Loading…</p>;
+  if (error || !d) return <div className="login"><div className="card"><h2>Link not available</h2><p className="muted">This link is invalid, has expired or was revoked. Please contact the sender for a new one.</p></div></div>;
+  const cur = d.currency; const kind = d.type === 'estimate' ? 'Quote' : d.type === 'credit_note' ? 'Credit note' : 'Invoice';
+  return <div style={{ padding: '24px 12px' }}><div className="preview"><div className="sp-between"><div><h1 style={{ color: '#1f4e5f' }}>{d.business.name}</h1><div style={{ color: '#555' }}>{d.business.email} {d.business.phone}</div></div><div style={{ textAlign: 'right' }}><h2>{kind} {d.number}</h2><div>{d.issue_date}</div></div></div>
+    <p style={{ color: '#555' }}>For <strong>{d.client_name}</strong>{d.title ? ` — ${d.title}` : ''}{d.valid_until ? ` · valid until ${d.valid_until}` : ''}{d.due_date ? ` · due ${d.due_date}` : ''}</p>
+    {d.status === 'void' && <div className="alert bad">This document has been voided.</div>}
+    <div style={{ overflowX: 'auto' }}><table><thead><tr><th>Description</th><th className="n">Qty</th><th className="n">Rate</th><th className="n">Amount</th></tr></thead><tbody>{d.lines.map((l: any, i: number) => <tr key={i}><td><strong>{l.description}</strong>{l.detail && <div style={{ color: '#555', whiteSpace: 'pre-line' }}>{l.detail}</div>}{l.package_id && l.package_display === 'itemized' && l.children.map((c: any, j: number) => <div key={j} style={{ color: '#555' }}>↳ {c.description}</div>)}</td><td className="n">{formatQtyUi(l.qty_milli)} {l.unit}</td><td className="n">{l.unit_price_cents ? fmt(l.unit_price_cents, cur) : ''}</td><td className="n">{fmt(l.net_cents, cur)}</td></tr>)}</tbody></table></div>
+    <div style={{ marginLeft: 'auto', maxWidth: 320, marginTop: 12 }}><div className="sp-between"><span>Subtotal</span><span>{fmt(d.subtotal_cents, cur)}</span></div>{d.discount_cents > 0 && <div className="sp-between"><span>Discount</span><span>−{fmt(d.discount_cents, cur)}</span></div>}{d.tax_summary.map((t: any) => <div key={t.name} className="sp-between"><span>{t.name} ({pctFromMilli(t.rate_milli)})</span><span>{fmt(t.tax_cents, cur)}</span></div>)}<div className="sp-between"><strong>Total</strong><strong>{fmt(d.total_cents, cur)}</strong></div>{d.type === 'invoice' && <div className="sp-between"><strong>Balance due</strong><strong>{fmt(d.balance_cents, cur)}</strong></div>}</div>
+    {[['Scope of work', d.scope], ['Deliverables', d.deliverables], ['Assumptions', d.assumptions], ['Exclusions', d.exclusions], ['Notes', d.notes], ['Terms', d.terms]].filter(([, v]) => v).map(([t, v]) => <div key={t}><h3 style={{ marginTop: 14 }}>{t}</h3><p style={{ whiteSpace: 'pre-line', color: '#333' }}>{v}</p></div>)}
+    <div className="row" style={{ marginTop: 18 }}><a className="btn fit" href={`/api/public/${token}/pdf`} target="_blank" rel="noreferrer">Download PDF</a></div>
+    {d.type === 'estimate' && d.status === 'accepted' && <div className="alert ok" style={{ marginTop: 14 }}>Accepted{d.accepted_by ? ` by ${d.accepted_by}` : ''}.</div>}{d.type === 'estimate' && d.status === 'rejected' && <div className="alert">This quote was declined.</div>}
+    {done && <div className="alert ok" style={{ marginTop: 14 }}>{done}</div>}
+    {d.can_respond && !done && <div className="card form" style={{ marginTop: 18 }}><h3>Respond to this quote</h3><p className="help">Typing your name and accepting records your acceptance of this quote with the date and time. It is not a legally binding signature in every jurisdiction.</p><Field label="Your full name"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>{err && <div className="alert bad">{err}</div>}
+      <div className="row"><button className="btn primary fit" disabled={!name.trim() || busy} onClick={() => run(async () => { await post(`/api/public/${token}/accept`, { name }); setDone('Thank you — your acceptance has been recorded.'); reload(); })}>Accept quote</button><button className="btn fit" disabled={busy} onClick={() => run(async () => { await post(`/api/public/${token}/reject`, {}); setDone('Your response has been recorded.'); reload(); })}>Decline</button></div></div>}
+  </div></div>;
+}
