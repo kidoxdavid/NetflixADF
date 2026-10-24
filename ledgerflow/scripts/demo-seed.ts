@@ -3,6 +3,8 @@
  * Creates a clearly-labelled "DEMO" workspace with invented sample services so you can click around.
  * Usage: npm run seed:demo      (all names, rates and clients below are fictional placeholders, NOT your rate card)
  */
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { openDb, get } from '../server/src/db.ts';
 import { config } from '../server/src/index.ts';
 import { hashPassword } from '../server/src/auth.ts';
@@ -25,4 +27,4 @@ export async function seedDemo(db = openDb(config.dbFile), emailAddr = 'demo@exa
   console.log(`Demo workspace created. Sign in as ${emailAddr} / ${password}`);
   return { bid };
 }
-if (import.meta.url === `file://${process.argv[1]}`) seedDemo().catch((e) => { console.error(e); process.exit(1); });
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) seedDemo().catch((e) => { console.error(e); process.exit(1); });

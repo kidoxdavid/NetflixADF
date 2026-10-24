@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openDb, all } from './db.ts';
 import { createApp } from './app.ts';
 import { smtpMailerFromEnv } from './mail.ts';
@@ -18,7 +18,7 @@ export const config = {
   dbFile: path.resolve(root, process.env.DATABASE_FILE || 'data/ledgerflow.db'), backupDir: path.resolve(root, process.env.BACKUP_DIR || 'data/backups'),
   webDir: path.join(root, 'web/dist'),
 };
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const db = openDb(config.dbFile); const mailer = smtpMailerFromEnv();
   const app = createApp({ db, mailer, backupDir: config.backupDir, dbFile: config.dbFile, webDir: config.webDir, allowRegistration: process.env.ALLOW_REGISTRATION === 'true', secureCookies: process.env.COOKIE_SECURE === 'true' });
   const server = app.listen(config.port, config.host, () => console.log(JSON.stringify({ level: 'info', msg: `LedgerFlow listening on http://${config.host}:${config.port}`, email: mailer.configured ? 'smtp configured' : 'email not configured (documents are prepared, not sent)' })));
